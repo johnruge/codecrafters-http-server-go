@@ -4,10 +4,39 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strings"
 )
 
 var _ = net.Listen
 var _ = os.Exit
+
+func getUrl (conn net.Conn) {
+	//make a buffer and read the request
+	buffer := make([]byte, 1024)
+	_, err := conn.Read(buffer)
+	if err != nil {
+		fmt.Println("Failed to read the buffer")
+		os.Exit(1)
+	}
+
+	//change the buffer to a string, get the url and check if it is there
+	stringurl := string(buffer)
+	parts := strings.Split(stringurl, "\r\n")
+	url := (strings.Split(parts[0], " "))[1]
+
+	//check if url is in the set of urls
+	if url == "/" {
+		conn.Write([]byte("HTTP/1.1 200 OK\r\n\r\n"))
+		fmt.Println("success")
+	} else {
+		conn.Write([]byte("HTTP/1.1 404 Not Found\r\n\r\n"))
+		fmt.Println("failure")
+	}
+}
+
+func addUrl (mapUrls map[string]string, url string, val string) {
+	mapUrls[url] = val
+}
 
 func main() {
 	l, err := net.Listen("tcp", "0.0.0.0:4221")
@@ -23,6 +52,10 @@ func main() {
 	}
 
 	fmt.Println("Accepted conection from: ", conn.RemoteAddr())
+	mapUrls := make(map[string]string)
+	addUrl(mapUrls, "/", "home")
+
+	getUrl(conn)
 
 	conn.Write([]byte("HTTP/1.1 200 OK\r\n\r\n"))
 }
