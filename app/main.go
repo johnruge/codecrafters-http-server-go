@@ -10,7 +10,7 @@ import (
 var _ = net.Listen
 var _ = os.Exit
 
-func getUrl (conn net.Conn) {
+func getUrl (conn net.Conn, mapUrls map[string]string) {
 	//make a buffer and read the request
 	buffer := make([]byte, 1024)
 	_, err := conn.Read(buffer)
@@ -25,12 +25,11 @@ func getUrl (conn net.Conn) {
 	url := (strings.Split(parts[0], " "))[1]
 
 	//check if url is in the set of urls
-	if url == "/" {
+	_ , exists := mapUrls[url]
+	if exists {
 		conn.Write([]byte("HTTP/1.1 200 OK\r\n\r\n"))
-		fmt.Println("success")
 	} else {
 		conn.Write([]byte("HTTP/1.1 404 Not Found\r\n\r\n"))
-		fmt.Println("failure")
 	}
 }
 
@@ -52,9 +51,11 @@ func main() {
 	}
 
 	fmt.Println("Accepted conection from: ", conn.RemoteAddr())
+
+	//make a map and add the urls
 	mapUrls := make(map[string]string)
 	addUrl(mapUrls, "/", "home")
 
-	getUrl(conn)
-	conn.Write([]byte("HTTP/1.1 200 OK\r\n\r\n"))
+	//get the url and return the appropiate status
+	getUrl(conn, mapUrls)
 }
