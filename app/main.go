@@ -94,4 +94,5 @@ func main() {
 	url := getUrl(conn)
 	fmt.Println(url)
 	getResponse(url, mapUrls, conn)
+
 }
