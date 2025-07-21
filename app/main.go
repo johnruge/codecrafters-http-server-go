@@ -10,7 +10,8 @@ import (
 var _ = net.Listen
 var _ = os.Exit
 
-func getUrl (conn net.Conn) string {
+//this func reads bytes from a connection and returns string
+func getString (conn net.Conn) string {
 	//make a buffer and read the request
 	buffer := make([]byte, 1024)
 	_, err := conn.Read(buffer)
@@ -19,23 +20,38 @@ func getUrl (conn net.Conn) string {
 		os.Exit(1)
 	}
 
-	//change the buffer to a string, get the url
 	stringurl := string(buffer)
+	return stringurl
+}
+
+//this func gets the url and user-agent from a request
+func getUrlAgent (conn net.Conn) (string, string) {
+	stringurl := getString(conn)
 	parts := strings.Split(stringurl, "\r\n")
-	requestParts := (strings.Split(parts[0], " "))
-	if len(requestParts) < 2 {
+	if len(parts) < 4 {
 		conn.Write([]byte("HTTP/1.1 400 Bad Request\r\n\r\n"))
 		os.Exit(1)
 	}
 
-	return requestParts[1]
+	url := (strings.Split(parts[0], " "))[1]
+	userAgent := (strings.Split(parts[3], " "))[1]
+
+	return url, userAgent
 }
 
+
 // this implementation is for test cases where the unique path like {user_id} is at the end
-// i will implement the function that will work for all test cases and valid urls in later stages of the project
+// will implement a func that will work for all valid urls in later stages of the project
 // currently this will not work home/{user_id}/{courses}/reviews
 // this will work home/courses/reviews/{course_id}
-func getResponse (url string, mapUrls map[string]string, conn net.Conn) {
+func getResponse (url string, userAgent string, mapUrls map[string]string, conn net.Conn) {
+	if url == "/user-agent" {
+		response := fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: " +
+		"text/plain\r\nContent-Length: %d\r\n\r\n%s", len(userAgent), userAgent)
+		conn.Write([]byte(response))
+		return
+	}
+
 	for i, v := range url {
 		if  i == len(url) - 1 {
 			_, ok := mapUrls[url]
@@ -54,7 +70,8 @@ func getResponse (url string, mapUrls map[string]string, conn net.Conn) {
 			if ok {
 				if val == "unique" {
 					responseContent := url[i + 1:]
-					response := fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: %d\r\n\r\n%s", len(responseContent), responseContent)
+					response := fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: " +
+					"text/plain\r\nContent-Length: %d\r\n\r\n%s", len(responseContent), responseContent)
 					conn.Write([]byte(response))
 					return
 				}
@@ -91,8 +108,7 @@ func main() {
 	addUrl(mapUrls, "/echo", "unique")
 
 	//get the url and return the appropiate status
-	url := getUrl(conn)
-	fmt.Println(url)
-	getResponse(url, mapUrls, conn)
+	url, userAgent := getUrlAgent(conn)
+	getResponse(url, userAgent, mapUrls, conn)
 
 }
