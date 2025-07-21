@@ -34,7 +34,16 @@ func getUrlAgent (conn net.Conn) (string, string) {
 	}
 
 	url := (strings.Split(parts[0], " "))[1]
-	userAgent := (strings.Split(parts[3], " "))[1]
+	var userAgent string
+
+	// Retrive the User-agent from the header
+	for _, v := range parts[1:] {
+		key := (strings.Split(v, " "))[0]
+		if key == "User-Agent:" {
+			userAgent = (strings.Split(v, " "))[1]
+			break
+		}
+	}
 
 	return url, userAgent
 }
@@ -110,5 +119,4 @@ func main() {
 	//get the url and return the appropiate status
 	url, userAgent := getUrlAgent(conn)
 	getResponse(url, userAgent, mapUrls, conn)
-
 }
