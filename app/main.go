@@ -26,8 +26,19 @@ func getString (conn net.Conn) string {
 }
 
 //this func gets the url and user-agent from a request
-func getUrlAgent (conn net.Conn) (string, string) {
+func getUrlAgentMethodBody (conn net.Conn) (string, string, string, string) {
 	stringurl := getString(conn)
+
+	//get the method
+	var method string
+	for i, v := range stringurl {
+		if v == ' ' {
+			method = stringurl[:i]
+			break
+		}
+	}
+
+	//the url and user-agent
 	parts := strings.Split(stringurl, "\r\n")
 	if len(parts) < 4 {
 		conn.Write([]byte("HTTP/1.1 400 Bad Request\r\n\r\n"))
@@ -46,18 +57,19 @@ func getUrlAgent (conn net.Conn) (string, string) {
 		}
 	}
 
-	return url, userAgent
+	body := strings.TrimRight(parts[len(parts)-1], "\x00\r\n ")
+
+	return url, userAgent, method, body
 }
 
-//this functyion handles returning files
-func handleFiles(path string, conn net.Conn) {
-	fmt.Println(path)
-	fmt.Println(path)
+//this functyion handles getting files
+func handleGetFiles(path string, conn net.Conn) {
 	file, err := os.Open(path)
 	if err != nil {
 		conn.Write([]byte("HTTP/1.1 404 Not Found\r\n\r\n"))
 		return
 	}
+	defer file.Close()
 
 	content, err := io.ReadAll(file)
 	if err != nil {
@@ -74,13 +86,30 @@ func handleFiles(path string, conn net.Conn) {
 
 	conn.Write([]byte(response))
 }
+// this function handles posting files
+func handlePostFiles(path string, conn net.Conn, body string) {
+	file, err := os.Create(path)
+	if err != nil {
+		panic(err)
+	}
+	defer file.Close()
+
+	_, err = file.WriteString(body)
+	if err != nil {
+		panic(err)
+	}
+
+	conn.Write([]byte("HTTP/1.1 201 Created\r\n\r\n"))
+}
+
 
 // this implementation is for test cases where the unique path like {user_id} is at the end
 // will implement a func that will work for all valid urls in later stages of the project
 // currently this will not work home/{user_id}/{courses}/reviews
 // this will work home/courses/reviews/{course_id}
 // this also works for .../files/{file_name}
-func getResponse (url string, userAgent string, mapUrls map[string]string, conn net.Conn) {
+func getResponse (url string, userAgent string, method string, body string,
+	mapUrls map[string]string, conn net.Conn) {
 	if url == "/user-agent" {
 		response := fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: " +
 		"text/plain\r\nContent-Length: %d\r\n\r\n%s", len(userAgent), userAgent)
@@ -112,10 +141,13 @@ func getResponse (url string, userAgent string, mapUrls map[string]string, conn 
 						conn.Write([]byte(response))
 						return
 					case "file":
-						// handle file func
 						path := fmt.Sprintf("/tmp/data/codecrafters.io/http-server-tester/%s", url[i+1:])
-						handleFiles(path, conn)
-						return
+						if method == "GET" {
+							handleGetFiles(path, conn)
+							return
+						} else {
+							handlePostFiles(path, conn, body)
+						}
 				}
 			} else {
 				conn.Write([]byte("HTTP/1.1 404 Not Found\r\n\r\n"))
@@ -142,8 +174,8 @@ func handleconn(conn net.Conn) {
 	addUrl(mapUrls, "/files", "file")
 
 	//get the url and return the appropiate status
-	url, userAgent := getUrlAgent(conn)
-	getResponse(url, userAgent, mapUrls, conn)
+	url, userAgent, method, body := getUrlAgentMethodBody(conn)
+	getResponse(url, userAgent, method, body, mapUrls, conn)
 }
 
 func main() {
