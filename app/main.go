@@ -46,8 +46,10 @@ func (r *Response) Write(conn net.Conn) error {
 	}
 
 	if r.Body != "" {
-		r.Headers["Content-Length"] = fmt.Sprintf("%d", len(r.Body))
-		response += fmt.Sprintf("Content-Length: %d\r\n", len(r.Body))
+		if _, exists := r.Headers["Content-Length"]; !exists {
+			r.Headers["Content-Length"] = fmt.Sprintf("%d", len(r.Body))
+			response += fmt.Sprintf("Content-Length: %d\r\n", len(r.Body))
+		}
 	}
 
 	response += "\r\n" + r.Body
@@ -83,7 +85,7 @@ func ParseRequest(rawRequest string) (*Request, error) {
 		}
 		headerParts := strings.SplitN(parts[i], ": ", 2)
 		if len(headerParts) == 2 {
-			req.Headers[headerParts[0]] = headerParts[1]
+			req.Headers[headerParts[0]] = strings.TrimSpace(headerParts[1])
 		}
 	}
 
@@ -234,8 +236,19 @@ func handleconn(conn net.Conn) {
 		}
 
 		resp := handleRequest(req, mapUrls)
+
+		// check if client requested connection close
+		if connectionHeader, exists := req.Headers["Connection"]; exists && strings.ToLower(connectionHeader) == "close" {
+			resp.Headers["Connection"] = "close"
+		}
+
 		if err := resp.Write(conn); err != nil {
 			fmt.Printf("Error writing response: %v\n", err)
+			return
+		}
+
+		// if Connection: close was requested, close the connection after response
+		if connectionHeader, exists := resp.Headers["Connection"]; exists && strings.ToLower(connectionHeader) == "close" {
 			return
 		}
 	}
