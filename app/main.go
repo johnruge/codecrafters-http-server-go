@@ -51,6 +51,8 @@ func getUrlAgent (conn net.Conn) (string, string) {
 
 //this functyion handles returning files
 func handleFiles(path string, conn net.Conn) {
+	fmt.Println(path)
+	fmt.Println(path)
 	file, err := os.Open(path)
 	if err != nil {
 		conn.Write([]byte("HTTP/1.1 404 Not Found\r\n\r\n"))
@@ -102,17 +104,18 @@ func getResponse (url string, userAgent string, mapUrls map[string]string, conn 
 			} else {
 			val, ok := mapUrls[url[:i]]
 			if ok {
-				if val == "unique" {
-					responseContent := url[i + 1:]
-					response := fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: " +
-					"text/plain\r\nContent-Length: %d\r\n\r\n%s", len(responseContent), responseContent)
-					conn.Write([]byte(response))
-					return
-				} else if val == "file" {
-					// handle file func
-					path := fmt.Sprintf("/tmp/%s", url[i+1:])
-					handleFiles(path, conn)
-					return
+				switch val {
+					case "unique":
+						responseContent := url[i + 1:]
+						response := fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: " +
+						"text/plain\r\nContent-Length: %d\r\n\r\n%s", len(responseContent), responseContent)
+						conn.Write([]byte(response))
+						return
+					case "file":
+						// handle file func
+						path := fmt.Sprintf("/tmp/data/codecrafters.io/http-server-tester/%s", url[i+1:])
+						handleFiles(path, conn)
+						return
 				}
 			} else {
 				conn.Write([]byte("HTTP/1.1 404 Not Found\r\n\r\n"))
