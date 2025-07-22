@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-// Request represents an HTTP request
+// represents an HTTP request
 type Request struct {
 	Method  string
 	URL     string
@@ -16,7 +16,7 @@ type Request struct {
 	Body    string
 }
 
-// Response represents an HTTP response
+// represents an HTTP response
 type Response struct {
 	StatusCode int
 	StatusText string
@@ -24,20 +24,20 @@ type Response struct {
 	Body       string
 }
 
-// NewResponse creates a new Response with default values
+// creates a new Response with default values
 func NewResponse() *Response {
 	return &Response{
 		Headers: make(map[string]string),
 	}
 }
 
-// SetStatus sets the status code and text for the response
+// sets the status code and text for the response
 func (r *Response) SetStatus(code int, text string) {
 	r.StatusCode = code
 	r.StatusText = text
 }
 
-// Write sends the response to the connection
+// sends the response to the connection
 func (r *Response) Write(conn net.Conn) error {
 	response := fmt.Sprintf("HTTP/1.1 %d %s\r\n", r.StatusCode, r.StatusText)
 
@@ -56,7 +56,7 @@ func (r *Response) Write(conn net.Conn) error {
 	return err
 }
 
-// ParseRequest parses the raw request string into a Request struct
+// parses the raw request string into a Request struct
 func ParseRequest(rawRequest string) (*Request, error) {
 	req := &Request{
 		Headers: make(map[string]string),
@@ -67,7 +67,7 @@ func ParseRequest(rawRequest string) (*Request, error) {
 		return nil, fmt.Errorf("invalid request format")
 	}
 
-	// Parse request line
+	// parse request line
 	requestLine := strings.Split(parts[0], " ")
 	if len(requestLine) < 3 {
 		return nil, fmt.Errorf("invalid request line")
@@ -75,7 +75,7 @@ func ParseRequest(rawRequest string) (*Request, error) {
 	req.Method = requestLine[0]
 	req.URL = requestLine[1]
 
-	// Parse headers
+	// parse headers
 	var i int
 	for i = 1; i < len(parts); i++ {
 		if parts[i] == "" {
@@ -87,7 +87,7 @@ func ParseRequest(rawRequest string) (*Request, error) {
 		}
 	}
 
-	// Parse body
+	// parse body
 	if i < len(parts)-1 {
 		req.Body = strings.TrimRight(strings.Join(parts[i+1:], "\r\n"), "\x00\r\n ")
 	}
@@ -107,7 +107,7 @@ func getString(conn net.Conn) (string, error) {
 	return string(buffer[:n]), nil
 }
 
-func handleGetFiles(path string, conn net.Conn) *Response {
+func handleGetFiles(path string) *Response {
 	resp := NewResponse()
 
 	file, err := os.Open(path)
@@ -186,7 +186,7 @@ func handleRequest(req *Request, mapUrls map[string]string) *Response {
 				case "file":
 					path := fmt.Sprintf("/tmp/data/codecrafters.io/http-server-tester/%s", req.URL[i+1:])
 					if req.Method == "GET" {
-						return handleGetFiles(path, nil)
+						return handleGetFiles(path)
 					} else {
 						return handlePostFiles(path, req.Body)
 					}
