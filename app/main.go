@@ -8,172 +8,236 @@ import (
 	"strings"
 )
 
-var _ = net.Listen
-var _ = os.Exit
+// Request represents an HTTP request
+type Request struct {
+	Method  string
+	URL     string
+	Headers map[string]string
+	Body    string
+}
 
-//this func reads bytes from a connection and returns string
-func getString (conn net.Conn) string {
-	//make a buffer and read the request
+// Response represents an HTTP response
+type Response struct {
+	StatusCode int
+	StatusText string
+	Headers    map[string]string
+	Body       string
+}
+
+// NewResponse creates a new Response with default values
+func NewResponse() *Response {
+	return &Response{
+		Headers: make(map[string]string),
+	}
+}
+
+// SetStatus sets the status code and text for the response
+func (r *Response) SetStatus(code int, text string) {
+	r.StatusCode = code
+	r.StatusText = text
+}
+
+// Write sends the response to the connection
+func (r *Response) Write(conn net.Conn) error {
+	response := fmt.Sprintf("HTTP/1.1 %d %s\r\n", r.StatusCode, r.StatusText)
+
+	for key, value := range r.Headers {
+		response += fmt.Sprintf("%s: %s\r\n", key, value)
+	}
+
+	if r.Body != "" {
+		r.Headers["Content-Length"] = fmt.Sprintf("%d", len(r.Body))
+		response += fmt.Sprintf("Content-Length: %d\r\n", len(r.Body))
+	}
+
+	response += "\r\n" + r.Body
+
+	_, err := conn.Write([]byte(response))
+	return err
+}
+
+// ParseRequest parses the raw request string into a Request struct
+func ParseRequest(rawRequest string) (*Request, error) {
+	req := &Request{
+		Headers: make(map[string]string),
+	}
+
+	parts := strings.Split(rawRequest, "\r\n")
+	if len(parts) < 1 {
+		return nil, fmt.Errorf("invalid request format")
+	}
+
+	// Parse request line
+	requestLine := strings.Split(parts[0], " ")
+	if len(requestLine) < 3 {
+		return nil, fmt.Errorf("invalid request line")
+	}
+	req.Method = requestLine[0]
+	req.URL = requestLine[1]
+
+	// Parse headers
+	var i int
+	for i = 1; i < len(parts); i++ {
+		if parts[i] == "" {
+			break
+		}
+		headerParts := strings.SplitN(parts[i], ": ", 2)
+		if len(headerParts) == 2 {
+			req.Headers[headerParts[0]] = headerParts[1]
+		}
+	}
+
+	// Parse body
+	if i < len(parts)-1 {
+		req.Body = strings.TrimRight(strings.Join(parts[i+1:], "\r\n"), "\x00\r\n ")
+	}
+
+	return req, nil
+}
+
+func getString(conn net.Conn) (string, error) {
 	buffer := make([]byte, 1024)
-	_, err := conn.Read(buffer)
+	n, err := conn.Read(buffer)
 	if err != nil {
-		fmt.Println("Failed to read the buffer")
-		os.Exit(1)
+		if err == io.EOF {
+			return "", err
+		}
+		return "", fmt.Errorf("failed to read from connection: %v", err)
 	}
-
-	stringurl := string(buffer)
-	return stringurl
+	return string(buffer[:n]), nil
 }
 
-//this func gets the url and user-agent from a request
-func getUrlAgentMethodBody (conn net.Conn) (string, string, string, string) {
-	stringurl := getString(conn)
+func handleGetFiles(path string, conn net.Conn) *Response {
+	resp := NewResponse()
 
-	//get the method
-	var method string
-	for i, v := range stringurl {
-		if v == ' ' {
-			method = stringurl[:i]
-			break
-		}
-	}
-
-	//the url and user-agent
-	parts := strings.Split(stringurl, "\r\n")
-	if len(parts) < 4 {
-		conn.Write([]byte("HTTP/1.1 400 Bad Request\r\n\r\n"))
-		os.Exit(1)
-	}
-
-	url := (strings.Split(parts[0], " "))[1]
-	var userAgent string
-
-	// Retrive the User-agent from the header
-	for _, v := range parts[1:] {
-		key := (strings.Split(v, " "))[0]
-		if key == "User-Agent:" {
-			userAgent = (strings.Split(v, " "))[1]
-			break
-		}
-	}
-
-	body := strings.TrimRight(parts[len(parts)-1], "\x00\r\n ")
-
-	return url, userAgent, method, body
-}
-
-//this functyion handles getting files
-func handleGetFiles(path string, conn net.Conn) {
 	file, err := os.Open(path)
 	if err != nil {
-		conn.Write([]byte("HTTP/1.1 404 Not Found\r\n\r\n"))
-		return
+		resp.SetStatus(404, "Not Found")
+		return resp
 	}
 	defer file.Close()
 
 	content, err := io.ReadAll(file)
 	if err != nil {
-		panic(err)
+		resp.SetStatus(500, "Internal Server Error")
+		return resp
 	}
 
-	stat, err := file.Stat()
-	if err != nil {
-		panic(err)
-	}
-
-	response := fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: application" +
-	"/octet-stream\r\nContent-Length: %d\r\n\r\n%s", stat.Size(), string(content))
-
-	conn.Write([]byte(response))
+	resp.SetStatus(200, "OK")
+	resp.Headers["Content-Type"] = "application/octet-stream"
+	resp.Body = string(content)
+	return resp
 }
-// this function handles posting files
-func handlePostFiles(path string, conn net.Conn, body string) {
+
+func handlePostFiles(path string, body string) *Response {
+	resp := NewResponse()
+
 	file, err := os.Create(path)
 	if err != nil {
-		panic(err)
+		resp.SetStatus(500, "Internal Server Error")
+		return resp
 	}
 	defer file.Close()
 
 	_, err = file.WriteString(body)
 	if err != nil {
-		panic(err)
+		resp.SetStatus(500, "Internal Server Error")
+		return resp
 	}
 
-	conn.Write([]byte("HTTP/1.1 201 Created\r\n\r\n"))
+	resp.SetStatus(201, "Created")
+	return resp
 }
 
+func handleRequest(req *Request, mapUrls map[string]string) *Response {
+	resp := NewResponse()
 
-// this implementation is for test cases where the unique path like {user_id} is at the end
-// will implement a func that will work for all valid urls in later stages of the project
-// currently this will not work home/{user_id}/{courses}/reviews
-// this will work home/courses/reviews/{course_id}
-// this also works for .../files/{file_name}
-func getResponse (url string, userAgent string, method string, body string,
-	mapUrls map[string]string, conn net.Conn) {
-	if url == "/user-agent" {
-		response := fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: " +
-		"text/plain\r\nContent-Length: %d\r\n\r\n%s", len(userAgent), userAgent)
-		conn.Write([]byte(response))
-		return
+	if req.URL == "/user-agent" {
+		userAgent := req.Headers["User-Agent"]
+		resp.SetStatus(200, "OK")
+		resp.Headers["Content-Type"] = "text/plain"
+		resp.Body = userAgent
+		return resp
 	}
 
-	for i, v := range url {
-		if  i == len(url) - 1 {
-			_, ok := mapUrls[url]
+	for i, v := range req.URL {
+		if i == len(req.URL)-1 {
+			_, ok := mapUrls[req.URL]
 			if ok {
-				conn.Write([]byte("HTTP/1.1 200 OK\r\n\r\n"))
-				return
+				resp.SetStatus(200, "OK")
+				return resp
 			} else {
-				conn.Write([]byte("HTTP/1.1 404 Not Found\r\n\r\n"))
-				return
+				resp.SetStatus(404, "Not Found")
+				return resp
 			}
 		} else if v == '/' {
-			if len(url[:i]) == 0 {
-				//pass
-			} else {
-			val, ok := mapUrls[url[:i]]
+			if len(req.URL[:i]) == 0 {
+				continue
+			}
+			val, ok := mapUrls[req.URL[:i]]
 			if ok {
 				switch val {
-					case "unique":
-						responseContent := url[i + 1:]
-						response := fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: " +
-						"text/plain\r\nContent-Length: %d\r\n\r\n%s", len(responseContent), responseContent)
-						conn.Write([]byte(response))
-						return
-					case "file":
-						path := fmt.Sprintf("/tmp/data/codecrafters.io/http-server-tester/%s", url[i+1:])
-						if method == "GET" {
-							handleGetFiles(path, conn)
-							return
-						} else {
-							handlePostFiles(path, conn, body)
-						}
+				case "unique":
+					responseContent := req.URL[i+1:]
+					resp.SetStatus(200, "OK")
+					resp.Headers["Content-Type"] = "text/plain"
+					resp.Body = responseContent
+					return resp
+				case "file":
+					path := fmt.Sprintf("/tmp/data/codecrafters.io/http-server-tester/%s", req.URL[i+1:])
+					if req.Method == "GET" {
+						return handleGetFiles(path, nil)
+					} else {
+						return handlePostFiles(path, req.Body)
+					}
 				}
 			} else {
-				conn.Write([]byte("HTTP/1.1 404 Not Found\r\n\r\n"))
-				return
-			}}
+				resp.SetStatus(404, "Not Found")
+				return resp
+			}
 		}
 	}
+
+	resp.SetStatus(404, "Not Found")
+	return resp
 }
 
-func addUrl (mapUrls map[string]string, url string, val string) {
-	mapUrls[url] = val
-}
-
-// this function handles a connection
 func handleconn(conn net.Conn) {
-	fmt.Println("Accepted conection from: ", conn.RemoteAddr())
-	for {
-		//make a map and add the urls
-		mapUrls := make(map[string]string)
-		addUrl(mapUrls, "/", "static")
-		addUrl(mapUrls, "/echo", "unique")
-		addUrl(mapUrls, "/files", "file")
+	defer conn.Close()
+	fmt.Println("Accepted connection from:", conn.RemoteAddr())
 
-		//get the url and return the appropiate status
-		url, userAgent, method, body := getUrlAgentMethodBody(conn)
-		getResponse(url, userAgent, method, body, mapUrls, conn)
+	mapUrls := make(map[string]string)
+	mapUrls["/"] = "static"
+	mapUrls["/echo"] = "unique"
+	mapUrls["/files"] = "file"
+
+	for {
+		rawRequest, err := getString(conn)
+		if err != nil {
+			if err == io.EOF {
+				return
+			}
+			fmt.Printf("Error reading request: %v\n", err)
+			resp := NewResponse()
+			resp.SetStatus(400, "Bad Request")
+			resp.Write(conn)
+			return
+		}
+
+		req, err := ParseRequest(rawRequest)
+		if err != nil {
+			fmt.Printf("Error parsing request: %v\n", err)
+			resp := NewResponse()
+			resp.SetStatus(400, "Bad Request")
+			resp.Write(conn)
+			return
+		}
+
+		resp := handleRequest(req, mapUrls)
+		if err := resp.Write(conn); err != nil {
+			fmt.Printf("Error writing response: %v\n", err)
+			return
+		}
 	}
 }
 
@@ -187,7 +251,7 @@ func main() {
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
-			fmt.Println("Error accepting connection: ", err.Error())
+			fmt.Println("Error accepting connection:", err.Error())
 			continue
 		}
 		go handleconn(conn)
