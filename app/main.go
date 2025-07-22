@@ -163,19 +163,18 @@ func addUrl (mapUrls map[string]string, url string, val string) {
 
 // this function handles a connection
 func handleconn(conn net.Conn) {
-	defer conn.Close()
-
 	fmt.Println("Accepted conection from: ", conn.RemoteAddr())
+	for {
+		//make a map and add the urls
+		mapUrls := make(map[string]string)
+		addUrl(mapUrls, "/", "static")
+		addUrl(mapUrls, "/echo", "unique")
+		addUrl(mapUrls, "/files", "file")
 
-	//make a map and add the urls
-	mapUrls := make(map[string]string)
-	addUrl(mapUrls, "/", "static")
-	addUrl(mapUrls, "/echo", "unique")
-	addUrl(mapUrls, "/files", "file")
-
-	//get the url and return the appropiate status
-	url, userAgent, method, body := getUrlAgentMethodBody(conn)
-	getResponse(url, userAgent, method, body, mapUrls, conn)
+		//get the url and return the appropiate status
+		url, userAgent, method, body := getUrlAgentMethodBody(conn)
+		getResponse(url, userAgent, method, body, mapUrls, conn)
+	}
 }
 
 func main() {
@@ -184,7 +183,6 @@ func main() {
 		fmt.Println("Failed to bind to port 4221")
 		os.Exit(1)
 	}
-	defer listener.Close()
 
 	for {
 		conn, err := listener.Accept()
