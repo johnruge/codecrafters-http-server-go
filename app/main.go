@@ -96,18 +96,8 @@ func addUrl (mapUrls map[string]string, url string, val string) {
 	mapUrls[url] = val
 }
 
-func main() {
-	l, err := net.Listen("tcp", "0.0.0.0:4221")
-	if err != nil {
-		fmt.Println("Failed to bind to port 4221")
-		os.Exit(1)
-	}
-
-	conn, err := l.Accept()
-	if err != nil {
-		fmt.Println("Error accepting connection: ", err.Error())
-		os.Exit(1)
-	}
+func handleconn(conn net.Conn) {
+	defer conn.Close()
 
 	fmt.Println("Accepted conection from: ", conn.RemoteAddr())
 
@@ -119,4 +109,22 @@ func main() {
 	//get the url and return the appropiate status
 	url, userAgent := getUrlAgent(conn)
 	getResponse(url, userAgent, mapUrls, conn)
+}
+
+func main() {
+	listener, err := net.Listen("tcp", "0.0.0.0:4221")
+	if err != nil {
+		fmt.Println("Failed to bind to port 4221")
+		os.Exit(1)
+	}
+	defer listener.Close()
+
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			fmt.Println("Error accepting connection: ", err.Error())
+			continue
+		}
+		go handleconn(conn)
+	}
 }
