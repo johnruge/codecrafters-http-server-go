@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"strings"
@@ -48,11 +49,35 @@ func getUrlAgent (conn net.Conn) (string, string) {
 	return url, userAgent
 }
 
+//this functyion handles returning files
+func handleFiles(path string, conn net.Conn) {
+	file, err := os.Open(path)
+	if err != nil {
+		conn.Write([]byte("HTTP/1.1 404 Not Found\r\n\r\n"))
+		return
+	}
+
+	content, err := io.ReadAll(file)
+	if err != nil {
+		panic(err)
+	}
+
+	stat, err := file.Stat()
+	if err != nil {
+		panic(err)
+	}
+
+	response := fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: application" +
+	"/octet-stream\r\nContent-Length: %d\r\n\r\n%s", stat.Size(), string(content))
+
+	conn.Write([]byte(response))
+}
 
 // this implementation is for test cases where the unique path like {user_id} is at the end
 // will implement a func that will work for all valid urls in later stages of the project
 // currently this will not work home/{user_id}/{courses}/reviews
 // this will work home/courses/reviews/{course_id}
+// this also works for .../files/{file_name}
 func getResponse (url string, userAgent string, mapUrls map[string]string, conn net.Conn) {
 	if url == "/user-agent" {
 		response := fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: " +
@@ -83,6 +108,11 @@ func getResponse (url string, userAgent string, mapUrls map[string]string, conn 
 					"text/plain\r\nContent-Length: %d\r\n\r\n%s", len(responseContent), responseContent)
 					conn.Write([]byte(response))
 					return
+				} else if val == "file" {
+					// handle file func
+					path := fmt.Sprintf("/tmp/%s", url[i+1:])
+					handleFiles(path, conn)
+					return
 				}
 			} else {
 				conn.Write([]byte("HTTP/1.1 404 Not Found\r\n\r\n"))
@@ -96,6 +126,7 @@ func addUrl (mapUrls map[string]string, url string, val string) {
 	mapUrls[url] = val
 }
 
+// this function handles a connection
 func handleconn(conn net.Conn) {
 	defer conn.Close()
 
@@ -105,6 +136,7 @@ func handleconn(conn net.Conn) {
 	mapUrls := make(map[string]string)
 	addUrl(mapUrls, "/", "static")
 	addUrl(mapUrls, "/echo", "unique")
+	addUrl(mapUrls, "/files", "file")
 
 	//get the url and return the appropiate status
 	url, userAgent := getUrlAgent(conn)
