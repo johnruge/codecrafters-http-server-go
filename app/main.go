@@ -154,6 +154,13 @@ func handlePostFiles(path string, body string) *Response {
 func handleRequest(req *Request, mapUrls map[string]string) *Response {
 	resp := NewResponse()
 
+	// Check for Accept-Encoding header and add Content-Encoding if gzip is supported
+	if acceptEncoding, exists := req.Headers["Accept-Encoding"]; exists {
+		if strings.Contains(strings.ToLower(acceptEncoding), "gzip") {
+			resp.Headers["Content-Encoding"] = "gzip"
+		}
+	}
+
 	if req.URL == "/user-agent" {
 		userAgent := req.Headers["User-Agent"]
 		resp.SetStatus(200, "OK")
