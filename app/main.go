@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"compress/gzip"
 	"fmt"
 	"io"
 	"net"
@@ -97,6 +99,15 @@ func ParseRequest(rawRequest string) (*Request, error) {
 	return req, nil
 }
 
+// compresses a string using gzip
+func compressString(input string) string {
+	var buf bytes.Buffer
+	gw := gzip.NewWriter(&buf)
+	gw.Write([]byte(input))
+	gw.Close()
+	return buf.String()
+}
+
 func getString(conn net.Conn) (string, error) {
 	buffer := make([]byte, 1024)
 	n, err := conn.Read(buffer)
@@ -155,9 +166,12 @@ func handleRequest(req *Request, mapUrls map[string]string) *Response {
 	resp := NewResponse()
 
 	// Check for Accept-Encoding header and add Content-Encoding if gzip is supported
+	shouldCompress := false
 	if acceptEncoding, exists := req.Headers["Accept-Encoding"]; exists {
+		// Check if gzip is in the accepted encodings
 		if strings.Contains(strings.ToLower(acceptEncoding), "gzip") {
 			resp.Headers["Content-Encoding"] = "gzip"
+			shouldCompress = true
 		}
 	}
 
@@ -166,6 +180,9 @@ func handleRequest(req *Request, mapUrls map[string]string) *Response {
 		resp.SetStatus(200, "OK")
 		resp.Headers["Content-Type"] = "text/plain"
 		resp.Body = userAgent
+		if shouldCompress {
+			resp.Body = compressString(userAgent)
+		}
 		return resp
 	}
 
@@ -190,7 +207,11 @@ func handleRequest(req *Request, mapUrls map[string]string) *Response {
 					responseContent := req.URL[i+1:]
 					resp.SetStatus(200, "OK")
 					resp.Headers["Content-Type"] = "text/plain"
-					resp.Body = responseContent
+					if shouldCompress {
+						resp.Body = compressString(responseContent)
+					} else {
+						resp.Body = responseContent
+					}
 					return resp
 				case "file":
 					path := fmt.Sprintf("/tmp/data/codecrafters.io/http-server-tester/%s", req.URL[i+1:])
